@@ -1,0 +1,14 @@
+{
+  "name": "ytdl-strm-proxy",
+  "module": "index.js",
+  "type": "module",
+  "devDependencies": {},
+  "peerDependencies": {},
+  "dependencies": {
+    "express": "^4.19.2",
+    "node-cron": "^3.0.3",
+    "node-fetch": "^2.7.0",
+    "sanitize-filename": "^1.6.3",
+    "sharp": "^0.33.3"
+  }
+}

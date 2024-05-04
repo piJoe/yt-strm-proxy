@@ -1,0 +1,16 @@
+version: "3"
+services:
+  yt-strm-proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "9080:9080"
+    environment:
+      BASE_URL: "http://192.168.88.254:9080"
+      # CRON_SCHEDULE: "* * * * *" # every full minute, debug only!
+      RUN_CRON_AT_START: "true"
+    volumes:
+      - "./config:/config"
+      - "./shows:/shows"
