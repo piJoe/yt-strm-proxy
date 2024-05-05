@@ -25,14 +25,17 @@ export async function fetchYoutubeData(id) {
     // if not in cache, re-request data via yt-dlp
     console.log("freshly requesting", id);
 
-    const { stdout, stderr } = await exec_p(`${ENV.YTDLP_BINARY} -j ${id}`);
+    // filter by bestvideo and bestaudio, each using m3u8 playlists (hls)
+    const { stdout, stderr } = await exec_p(
+      `${ENV.YTDLP_BINARY} -j -f "bv[protocol*=m3u8]+ba[protocol*=m3u8]" ${id}`
+    );
     if (!stdout) {
       return null;
     }
 
     const data = JSON.parse(stdout);
 
-    if (!data.formats) {
+    if (!data.formats || !data.requested_formats) {
       return null;
     }
 
@@ -46,30 +49,34 @@ export async function fetchYoutubeData(id) {
       duration: data.duration,
     };
 
-    const playlistFormats = data.formats.filter(
-      (f) => f.protocol.includes("m3u8") // f.protocol === "m3u8_native"
-    );
+    // we probably no longer need to filter, because we're now using the `requested_formats` field from yt-dlp directly
 
-    const audioFormats = playlistFormats.filter(
-      (f) => f.resolution === "audio only"
-    );
+    // const playlistFormats = data.formats.filter(
+    //   (f) => f.protocol.includes("m3u8") // f.protocol === "m3u8_native"
+    // );
+    // const audioFormats = playlistFormats.filter(
+    //   (f) => f.resolution === "audio only"
+    // );
+    // const videoFormats = playlistFormats.filter(
+    //   (f) => f.resolution !== "audio only"
+    // );
+    // const bestFormats = {
+    //   audio: audioFormats[0],
+    //   video: videoFormats.sort((a, b) => b.quality - a.quality)[0],
+    // };
 
-    const videoFormats = playlistFormats.filter(
-      (f) => f.resolution !== "audio only"
-    );
-
-    const bestFormats = {
-      audio: audioFormats[0],
-      video: videoFormats.sort((a, b) => b.quality - a.quality)[0],
+    const requestedFormats = {
+      audio: data.requested_formats.find((f) => f.audio_ext !== "none"),
+      video: data.requested_formats.find((f) => f.video_ext !== "none"),
     };
 
     const response = {
       baseUrlPath: `/yt/${id}`,
       metadata,
-      formats: bestFormats,
+      formats: requestedFormats,
       playlists: {
-        audio: await (await fetch(bestFormats.audio.url)).text(),
-        video: await (await fetch(bestFormats.video.url)).text(),
+        audio: await (await fetch(requestedFormats.audio.url)).text(),
+        video: await (await fetch(requestedFormats.video.url)).text(),
       },
       cacheUntil: Date.now() + CACHE_DURATION,
     };
@@ -99,8 +106,14 @@ async function generatePlaylists(id, baseUrlRewrite) {
 #EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=2000000,AUDIO="default-audio-group"
 ${baseUrlRewrite}/yt/${id}/video.m3u8`;
 
-    const audioPlaylist = rewritePlaylist(data.playlists.audio, baseUrlRewrite);
-    const videoPlaylist = rewritePlaylist(data.playlists.video, baseUrlRewrite);
+    const audioPlaylist = rewritePlaylistRegex(
+      data.playlists.audio,
+      baseUrlRewrite
+    );
+    const videoPlaylist = rewritePlaylistRegex(
+      data.playlists.video,
+      baseUrlRewrite
+    );
 
     return {
       master: masterPlaylist,
@@ -117,6 +130,33 @@ export async function getYoutubePlaylists(id, baseUrlRewrite) {
   return await generatePlaylists(id, baseUrlRewrite);
 }
 
+// testing out fetching youtube's master manifest instead of building our own
+export async function getYoutubeMasterManifest(id, baseUrlRewrite) {
+  try {
+    const data = await fetchYoutubeData(id);
+
+    // TODO: this should be in the fetchYoutubeData method if everything works
+    const manifestPlaylist = await (
+      await fetch(data.formats.audio.manifest_url)
+    ).text();
+
+    return rewritePlaylistRegex(manifestPlaylist, baseUrlRewrite);
+  } catch (e) {
+    console.error(e);
+    return null;
+  }
+}
+
+export async function fetchAndRewritePlaylist(url, baseUrlRewrite) {
+  try {
+    const content = await (await fetch(url)).text();
+    return rewritePlaylistRegex(content, baseUrlRewrite);
+  } catch (e) {
+    console.error(e);
+    return null;
+  }
+}
+
 // cleanup cache, remove any expired entry
 function cleanupCache() {
   for (const [id, data] of cachedResponses) {
@@ -126,6 +166,26 @@ function cleanupCache() {
   }
 }
 
+// seems to work better in more edge cases, also cleaner
+function rewritePlaylistRegex(playlist, baseUrlRewrite) {
+  const lines = playlist.split("\n");
+
+  const urlRegexp = new RegExp(/https?:\/\/([^"]+)/, "ig");
+
+  let newPlaylist = [];
+  for (const line of lines) {
+    newPlaylist.push(
+      line.replace(
+        urlRegexp,
+        (match) => `${baseUrlRewrite}/proxy/?url=${encodeURIComponent(match)}`
+      )
+    );
+  }
+
+  return newPlaylist.join("\n");
+}
+
+// possibly deprecated?
 function rewritePlaylist(playlist, baseUrlRewrite) {
   const lines = playlist.split("\n");
 

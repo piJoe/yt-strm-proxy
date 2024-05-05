@@ -22,8 +22,27 @@ export function setupServer() {
     return res.end(playlists[playlist]);
   });
 
+  // // trying out requesting the manifest from youtube directly instead of building our own
+  // app.get("/yt-test/:id/master.m3u8", async (req, res) => {
+  //   const { id } = req.params;
+
+  //   console.log("requesting yt manifest for", id);
+
+  //   const manifest = await getYoutubeMasterManifest(id, ENV.BASE_URL);
+  //   res.header("content-type", "application/x-mpegURL");
+  //   return res.end(manifest);
+  // });
+
   app.get("/proxy", async (req, res) => {
     const url = req.query.url;
+
+    // if (url.endsWith(".m3u8")) {
+    //   console.log("proxy requested m3u8, needs rewrite");
+    //   const playlist = await fetchAndRewritePlaylist(url, ENV.BASE_URL);
+    //   res.header("content-type", "application/x-mpegURL");
+    //   return res.end(playlist);
+    // }
+
     // console.log(
     //   "proxying",
     //   url.substring(0, 30) + "..." + url.substring(url.length - 20)
